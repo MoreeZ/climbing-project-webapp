@@ -6,14 +6,15 @@ export default function RootLayout() {
   return (
     <VideoDataProvider>
       <Drawer
-        initialRouteName="home"
+        initialRouteName="index"
         screenOptions={{
           headerStyle: { backgroundColor: "#f4511e" },
           headerTintColor: "#fff",
           headerTitleStyle: { fontWeight: "bold" },
+          
         }}
       >
-        <Drawer.Screen name="home" options={{ title: "Home" }} />
+        <Drawer.Screen name="index" options={{ title: "Home" }} />
         <Drawer.Screen name="upload" options={{ title: "Upload" }} />
         <Drawer.Screen name="analyze" options={{ title: "Analysis" }} />
       </Drawer>

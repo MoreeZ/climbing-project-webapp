@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -8,16 +8,58 @@ import {
   StyleSheet,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-
-// Import your global store hook
-import { useVideo } from "../store/VideoProvider"; // Adjust path as needed
+import { io } from "socket.io-client";  // <-- import socket.io-client
+import configData from "../config.json";
+import { useRouter } from "expo-router";
+import { useVideo } from "../store/VideoDataProvider"; // Adjust path if needed
 
 export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
-  const [videoMetadata, setVideoMetadata] = useState<File | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0); // Track the progress of "processing progress"
 
-  // Get dispatch from the global video store
+  const router = useRouter();
   const { dispatch } = useVideo();
+  
+  // Keep socket reference so we can disconnect on unmount
+  const socketRef = useRef<any>(null);
+  const connectSocket = async () => {
+    return new Promise((resolve, reject) => {
+      // 1. Connect to the socket
+      socketRef.current = io(configData.debugApiRootUrl);
+  
+      // 2. Handle successful connection
+      socketRef.current.on("connect", () => {
+        console.log("Socket connected. ID:", socketRef.current.id);
+        resolve(socketRef.current.id);
+      });
+  
+      // 3. Handle connection errors
+      socketRef.current.on("connect_error", (error: any) => {
+        console.error("Socket connection error:", error);
+        reject(error); // Reject the promise with the error
+      });
+  
+      // 4. Listen for server progress updates
+      socketRef.current.on("processing progress", (percent: number) => {
+        console.log("Processing progress:", percent);
+        let progress = Math.round(percent * 100);
+        setProgress(progress);
+        if (progress === 100) {
+          console.log("disconnecting socket")
+          socketRef.current.disconnect();
+        }
+      });
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [])
 
   const pickVideo = async () => {
     try {
@@ -26,47 +68,38 @@ export default function UploadScreen() {
         copyToCacheDirectory: true,
       });
 
-      console.log(result);
-
       if (result.canceled) {
         // User canceled the picker
         return;
       }
 
-      // Adjust based on how DocumentPicker returns files; 
-      // some versions have `result.output` or `result.assets`.
-      // For now, assume `result.output` is an array:
-      setVideoMetadata(result.output?.[0] ?? null);
+      // Expo’s DocumentPicker in some versions can return 
+      // result.output or result.uri. Adjust logic as needed.
+      setVideoFile(result.output?.[0] ?? null);
     } catch (error: any) {
       Alert.alert("Error", error.message);
     }
   };
 
   const uploadVideo = async () => {
-    if (!videoMetadata) {
+    if (!videoFile) {
       Alert.alert("No video selected", "Please select a video to upload.");
       return;
     }
-
+    
     setUploading(true);
 
-    const uploadUrl = "https://services.oskarmroz.com/vision-project/video-upload";
-
     try {
+      const socketId = await connectSocket();
+      const uploadUrl =
+      configData.debugApiRootUrl + "/vision-project/video-upload/" + socketId;
+      console.log("Upload URL:", uploadUrl);
+
       const formData = new FormData();
-      formData.append("video", {
-        type: videoMetadata.type || "video/mp4",
-        name: videoMetadata.name || "upload.mp4",
-        // NOTE: In some DocumentPicker versions, you may need the `uri` property to actually upload the file.
-        // If you do, you'd do something like: uri: videoMetadata.uri
-        // But since your code doesn't show that usage, we assume the server is receiving the file somehow.
-      } as any);
+      formData.append("video", videoFile);
 
       const response = await fetch(uploadUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
         body: formData,
       });
 
@@ -75,17 +108,20 @@ export default function UploadScreen() {
         throw new Error(`Upload failed: ${errorText}`);
       }
 
-      // --- NEW CODE: Parse the response and dispatch it into the store ---
       const responseData = await response.json();
-      // Example shape expected: { videoUrl: "https://url.of.video.mp4", events: [{...}] }
+      console.log("responseData:", responseData)
+      if(responseData) {
+        dispatch({
+          type: "SET_VIDEOS",
+          payload: responseData.result,
+        });
+        router.push("/analyze");
+      } else {
+        console.log("Error! Response data is in wrong format.", responseData)
+      }
 
-      dispatch({
-        type: "ADD_VIDEO",
-        payload: responseData, // The entire video object from the server
-      });
-      // -------------------------------------------------------------------
-
-      Alert.alert("Success", "Video uploaded successfully!");
+      // You could also toast/alert a success message here if desired
+      // Alert.alert("Success", "Video uploaded successfully!");
     } catch (error: any) {
       Alert.alert("Upload Error", error.message);
     } finally {
@@ -97,9 +133,9 @@ export default function UploadScreen() {
     <View style={styles.container}>
       <Text style={styles.heading}>Welcome to the Video Uploader</Text>
       <View style={styles.uploadBox}>
-        {videoMetadata ? (
+        {videoFile ? (
           <Text style={styles.selectedVideoText}>
-            Selected: {videoMetadata.name}
+            Selected: {videoFile.name}
           </Text>
         ) : (
           <Text style={styles.noVideoText}>No video selected.</Text>
@@ -111,14 +147,18 @@ export default function UploadScreen() {
           </View>
 
           {uploading ? (
-            <ActivityIndicator size="large" color="#0066cc" />
+            <>
+              <ActivityIndicator size="large" color="#0066cc" />
+              {/* Show progress percentage while processing */}
+              <Text style={{ marginTop: 10 }}>Processing: {progress}%</Text>
+            </>
           ) : (
             <View style={styles.buttonWrapper}>
               <Button
                 title="Upload Video"
                 onPress={uploadVideo}
                 color="#28a745"
-                disabled={!videoMetadata}
+                disabled={!videoFile}
               />
             </View>
           )}
@@ -128,6 +168,7 @@ export default function UploadScreen() {
   );
 }
 
+// Styling
 const styles = StyleSheet.create({
   container: {
     flex: 1,
