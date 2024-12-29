@@ -94,9 +94,9 @@ export default function UploadScreen() {
       dispatch({
         type: "RESET_VIDEOS",
       });
-      const socketId = await connectSocket();
+      // const socketId = await connectSocket();
       const uploadUrl =
-        configData.apiRootUrl + "/video-upload/" + socketId;
+        configData.apiRootUrl + "/video-upload/" + "socketId";
 
       const formData = new FormData();
       formData.append("video", videoFile);
