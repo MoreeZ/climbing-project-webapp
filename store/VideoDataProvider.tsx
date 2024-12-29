@@ -38,6 +38,7 @@ type VideoState = {
 type Action =
   | { type: "ADD_VIDEO"; payload: VideoItem }
   | { type: "REMOVE_VIDEO"; payload: string }
+  | { type: "RESET_VIDEOS" }
   | { type: "SET_VIDEOS"; payload: VideoItem[] }; // We'll remove videos by videoUrl.
 
 /**
@@ -61,6 +62,11 @@ function videoReducer(state: VideoState, action: Action): VideoState {
       return {
         ...state,
         videos: action.payload,
+      };
+    case "RESET_VIDEOS":
+      return {
+        ...state,
+        videos: []
       };
     default:
       return state;

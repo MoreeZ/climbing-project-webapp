@@ -16,65 +16,68 @@ export default function AnalyzeScreen() {
   const [activeHold, setActiveHold] = useState<string | null>(null);
   const [sortedEventsByLimb, setSortedEventsByLimb] = useState(new Map<string, string[]>());
 
-  useEffect(()=>{
+  useEffect(() => {
     const limbMap = new Map<string, string[]>();
-    videos.forEach((vid)=>{
-      vid.events.forEach(event=>{
-        if(limbMap.has(event.limb)) {
-          limbMap.set(event.limb, [...limbMap.get(event.limb)!, event.hold] );
+    videos.forEach((vid) => {
+      vid.events.forEach(event => {
+        if (limbMap.has(event.limb)) {
+          limbMap.set(event.limb, [...limbMap.get(event.limb)!, event.hold]);
         }
         else {
-          limbMap.set(event.limb, [event.hold] );
+          limbMap.set(event.limb, [event.hold]);
         }
       })
     })
+    const availableLimbs = Array.from(limbMap.keys());
+    if (availableLimbs.length > 0) {
+      setActiveLimb(availableLimbs[0])
+    }
     setSortedEventsByLimb(limbMap);
   }, [videos])
 
+  useEffect(() => {
+    // Navigate to selected hold and limb in each video
+    videosRef.current.forEach((video, index) => {
+      if (!videoStates[index].isLoaded) return;
+      const timestamp = findTimestamp(index, activeLimb!, activeHold!);
+      if (timestamp) {
+        video?.setPositionAsync((timestamp * 1000) - 2000);
+      }
+      else {
+        video?.setPositionAsync(0);
+      }
+    })
+  }, [activeHold, activeLimb])
+
   const findTimestamp = (videoIndex: number, limb: string, hold: string) => {
-    console.log("searching for limb:", limb, " and hold:", hold);
-    if(!videos[videoIndex]) return null;
-    const timestamp = videos[videoIndex].events.find(event=>event.limb === limb && event.hold === hold)?.timestamp;
-    console.log("found:", timestamp);
+    if (!videos[videoIndex]) return null;
+    if (!limb || !hold) return null;
+    const timestamp = videos[videoIndex].events.find(event => event.limb === limb && event.hold === hold)?.timestamp;
     return timestamp || null;
   }
 
-  const handleNavigateToTimestampForEachVideo = (activeHold: string) => {
-    console.log("handleNavigateToTimestampForEachVideo", videosRef.current)
-    videosRef.current.forEach((video, index)=>{
-      if(!videoStates[index].isLoaded) return;
-      const timestamp = findTimestamp(index, activeLimb!, activeHold);
-      if(timestamp) {
-        video?.setPositionAsync(timestamp * 1000);
-      }
-      else {
-        video?.setPositionAsync(videoStates[index].durationMillis!);
-      }
-    })
-  }
-
   const handleSetVideoStatus = (index: number, newState: AVPlaybackStatusSuccess | AVPlaybackStatusError) => {
-    setVideoStates([...videoStates.slice(0, index), newState, ...videoStates.slice(index+1)])
+    setVideoStates([...videoStates.slice(0, index), newState, ...videoStates.slice(index + 1)])
   }
 
-  const renderHoldButtonsForLimb = (limb: string | null) => {
-    if (!limb) return <></>
+  const renderHoldButtons = () => {
+    if (!activeLimb) return <View></View>
     return <View style={styles.buttonsContainer}>
-      {sortedEventsByLimb.has(limb) && sortedEventsByLimb.get(limb)!.map((holdStr, index) => (
-        <Pressable key={index} onPress={()=>{
-            handleNavigateToTimestampForEachVideo(holdStr);
-          }} style={styles.eachButton}>
-          <Text selectable={false}>{holdStr}</Text>
-        </Pressable>
+      {activeLimb && sortedEventsByLimb.has(activeLimb) && sortedEventsByLimb.get(activeLimb)!.map((holdStr, index) => (
+        <View key={index} style={styles.eachButton}>
+          <Button title={holdStr} onPress={() => {
+            setActiveHold(holdStr);
+          }} color={activeHold === holdStr ? "#28a745" : "#0066cc"} />
+        </View>
       ))}
     </View>
   }
 
   const renderLimbButtons = () => {
     return <View style={styles.buttonsContainer}>
-      {Array.from(sortedEventsByLimb.keys()).map((limbStr: string, index)=> (
+      {Array.from(sortedEventsByLimb.keys()).map((limbStr: string, index) => (
         <View key={index} style={styles.eachButton}>
-          <Button title={limbStr} onPress={()=>{setActiveLimb(limbStr)}} color="#0066cc"/>
+          <Button title={limbStr} onPress={() => { setActiveLimb(limbStr); setActiveHold(null) }} color={activeLimb === limbStr ? "#28a745" : "#0066cc"} />
         </View>
       ))}
     </View>
@@ -91,29 +94,32 @@ export default function AnalyzeScreen() {
 
   return (
     <ScrollView style={styles.container}>
-    <View style={styles.limbNavContainer}>
-      <Text style={styles.navigationText}>Limbs</Text>
-      { renderLimbButtons() }
-    </View>
-    <View style={styles.limbNavContainer}>
-      <Text style={styles.navigationText}>Holds</Text>
-      { renderHoldButtonsForLimb(activeLimb) }
-    </View>
+      <View style={styles.limbNavContainer}>
+        <Text style={styles.navigationText}>Limbs</Text>
+        {renderLimbButtons()}
+      </View>
+      <View style={styles.limbNavContainer}>
+        <Text style={styles.navigationText}>Holds</Text>
+        {renderHoldButtons()}
+      </View>
 
       <ScrollView style={styles.videoContainer} horizontal showsHorizontalScrollIndicator={false}>
-        {videos && videos.map((vid,index)=>
-          <Video
-            key={index}
-            ref={(ref) => (videosRef.current[index] = ref)}
-            style={styles.video}
-            source={{ uri: vid.videoUrl }}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-            isMuted
-            onPlaybackStatusUpdate={(newStatus)=>handleSetVideoStatus(index, newStatus)}
-            videoStyle={Platform.OS === 'web' ? { position: 'relative' } : undefined}
-            
-          />
+        {videos && videos.map((vid, index) =>
+          <View key={index}>
+            <Text style={styles.navigationText}>Video {index + 1}</Text>
+            <Video
+              key={index}
+              ref={(ref) => (videosRef.current[index] = ref)}
+              style={styles.video}
+              source={{ uri: vid.videoUrl }}
+              useNativeControls
+              resizeMode={ResizeMode.CONTAIN}
+              isMuted
+              onPlaybackStatusUpdate={(newStatus) => handleSetVideoStatus(index, newStatus)}
+              videoStyle={Platform.OS === 'web' ? { position: 'relative' } : undefined}
+
+            />
+          </View>
         )}
       </ScrollView>
     </ScrollView>
@@ -160,5 +166,8 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
     fontSize: 16,
     color: "#888",
+  },
+  findError: {
+
   },
 });

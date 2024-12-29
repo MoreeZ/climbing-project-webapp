@@ -4,11 +4,10 @@ import {
   Text,
   Button,
   ActivityIndicator,
-  Alert,
   StyleSheet,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { io } from "socket.io-client";  // <-- import socket.io-client
+import { io } from "socket.io-client"; // <-- import socket.io-client
 import configData from "../config.json";
 import { useRouter } from "expo-router";
 import { useVideo } from "../store/VideoDataProvider"; // Adjust path if needed
@@ -17,36 +16,35 @@ export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0); // Track the progress of "processing progress"
+  const [error, setError] = useState<string | null>(null); // State to track error messages
 
   const router = useRouter();
   const { dispatch } = useVideo();
-  
-  // Keep socket reference so we can disconnect on unmount
+
   const socketRef = useRef<any>(null);
   const connectSocket = async () => {
     return new Promise((resolve, reject) => {
-      // 1. Connect to the socket
-      socketRef.current = io(configData.debugApiRootUrl);
-  
-      // 2. Handle successful connection
+      socketRef.current = io(configData.apiRootUrl);
+
       socketRef.current.on("connect", () => {
         console.log("Socket connected. ID:", socketRef.current.id);
         resolve(socketRef.current.id);
       });
-  
-      // 3. Handle connection errors
+
+      socketRef.current.on("disconnect", () => {
+        console.log("Socket disconnected. ID:", socketRef.current.id);
+      });
+
       socketRef.current.on("connect_error", (error: any) => {
         console.error("Socket connection error:", error);
         reject(error); // Reject the promise with the error
       });
-  
-      // 4. Listen for server progress updates
+
       socketRef.current.on("processing progress", (percent: number) => {
-        console.log("Processing progress:", percent);
         let progress = Math.round(percent * 100);
         setProgress(progress);
         if (progress === 100) {
-          console.log("disconnecting socket")
+          console.log("disconnecting socket");
           socketRef.current.disconnect();
         }
       });
@@ -59,7 +57,7 @@ export default function UploadScreen() {
         socketRef.current.disconnect();
       }
     };
-  }, [])
+  }, []);
 
   const pickVideo = async () => {
     try {
@@ -77,23 +75,26 @@ export default function UploadScreen() {
       // result.output or result.uri. Adjust logic as needed.
       setVideoFile(result.output?.[0] ?? null);
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      setError(`Error selecting video: ${error.message}`);
     }
   };
 
   const uploadVideo = async () => {
     if (!videoFile) {
-      Alert.alert("No video selected", "Please select a video to upload.");
+      setError("No video selected. Please select a video to upload.");
       return;
     }
-    
+
     setUploading(true);
+    setError(null); // Reset the error state
 
     try {
+      dispatch({
+        type: "RESET_VIDEOS",
+      });
       const socketId = await connectSocket();
       const uploadUrl =
-      configData.debugApiRootUrl + "/vision-project/video-upload/" + socketId;
-      console.log("Upload URL:", uploadUrl);
+        configData.apiRootUrl + "/video-upload/" + socketId;
 
       const formData = new FormData();
       formData.append("video", videoFile);
@@ -109,21 +110,17 @@ export default function UploadScreen() {
       }
 
       const responseData = await response.json();
-      console.log("responseData:", responseData)
-      if(responseData) {
+      if (responseData) {
         dispatch({
           type: "SET_VIDEOS",
           payload: responseData.result,
         });
         router.push("/analyze");
       } else {
-        console.log("Error! Response data is in wrong format.", responseData)
+        console.log("Error! Response data is in wrong format.", responseData);
       }
-
-      // You could also toast/alert a success message here if desired
-      // Alert.alert("Success", "Video uploaded successfully!");
     } catch (error: any) {
-      Alert.alert("Upload Error", error.message);
+      setError(`Upload Error: ${error.message}`);
     } finally {
       setUploading(false);
     }
@@ -141,6 +138,8 @@ export default function UploadScreen() {
           <Text style={styles.noVideoText}>No video selected.</Text>
         )}
 
+        {error && <Text style={styles.errorText}>{error}</Text>}
+
         <View style={styles.buttonContainer}>
           <View style={styles.buttonWrapper}>
             <Button title="Select Video" onPress={pickVideo} color="#0066cc" />
@@ -149,7 +148,6 @@ export default function UploadScreen() {
           {uploading ? (
             <>
               <ActivityIndicator size="large" color="#0066cc" />
-              {/* Show progress percentage while processing */}
               <Text style={{ marginTop: 10 }}>Processing: {progress}%</Text>
             </>
           ) : (
@@ -191,9 +189,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
     elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
+    boxShadow: "0px 5px 10px rgba(0, 0, 0, 0.1)"
   },
   selectedVideoText: {
     fontSize: 16,
@@ -205,6 +201,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     color: "#999",
     fontStyle: "italic",
+  },
+  errorText: {
+    color: "red",
+    fontSize: 14,
+    marginTop: 10,
   },
   buttonContainer: {
     width: "100%",

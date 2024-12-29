@@ -1,4 +1,5 @@
 {
-    "apiRootUrl": "https://services.oskarmroz.com",
-    "debugApiRootUrl": "http://127.0.0.1:5000"
+    "apiRootUrl": "https://services.oskarmroz.com/indoor-climbing",
+    "debugApiRootUrl": "http://127.0.0.1:5000",
+    "analysis_timestamp_offset_ms": 2000
 }
