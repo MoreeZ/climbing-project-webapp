@@ -96,7 +96,7 @@ export default function UploadScreen() {
       });
       // const socketId = await connectSocket();
       const uploadUrl =
-        configData.apiRootUrl + "/video-upload/" + "socketId";
+        configData.apiRootUrl + configData.serverCustomPath + "video-upload/" + "socketId";
 
       const formData = new FormData();
       formData.append("video", videoFile);
