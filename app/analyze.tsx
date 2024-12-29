@@ -41,7 +41,7 @@ export default function AnalyzeScreen() {
       if (!videoStates[index].isLoaded) return;
       const timestamp = findTimestamp(index, activeLimb!, activeHold!);
       if (timestamp) {
-        video?.setPositionAsync((timestamp * 1000) - 2000);
+        video?.setPositionAsync((timestamp * 1000));
       }
       else {
         video?.setPositionAsync(0);
