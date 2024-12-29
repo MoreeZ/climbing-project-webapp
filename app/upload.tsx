@@ -24,7 +24,9 @@ export default function UploadScreen() {
   const socketRef = useRef<any>(null);
   const connectSocket = async () => {
     return new Promise((resolve, reject) => {
-      socketRef.current = io(configData.apiRootUrl);
+      socketRef.current = io(configData.apiRootUrl, {
+        path: configData.serverCustomPath
+      });
 
       socketRef.current.on("connect", () => {
         console.log("Socket connected. ID:", socketRef.current.id);
