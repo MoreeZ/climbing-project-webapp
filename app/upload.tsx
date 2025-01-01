@@ -69,12 +69,14 @@ export default function UploadScreen() {
     const videosResponse = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${videoName}`);
     try {
       const data = await videosResponse.json();
-      dispatch({
-        type: "SET_VIDEOS",
-        payload: data,
-      });
-      setUploading(false);
-      router.push("/analyze");
+      if(data.length > 0) {
+        dispatch({
+          type: "SET_VIDEOS",
+          payload: data,
+        });
+        setUploading(false);
+        router.push("/analyze");
+      }
     }
     catch (error: any) {
       console.log("Failed to access server filesystem cache.", error)
@@ -169,7 +171,7 @@ export default function UploadScreen() {
                 title="Upload Video"
                 onPress={uploadVideo}
                 color="#28a745"
-                disabled={!videoFile}
+                disabled={!videoFile || uploading}
               />
             </View>
           )}
