@@ -17,15 +17,25 @@ export default function AnalyzeScreen() {
   const [sortedEventsByLimb, setSortedEventsByLimb] = useState(new Map<string, string[]>());
 
   useEffect(() => {
+    console.log("videos:", videos)
     const limbMap = new Map<string, string[]>();
-    videos.forEach((vid) => {
+    videos && videos.forEach((vid) => {
       vid.events.forEach(event => {
+        console.log("===============================================")
+        console.log("event:", event)
+        console.log("limbMap after:", limbMap)
+        console.log("limbMap.has(event.limb):", limbMap.has(event.limb))
         if (limbMap.has(event.limb)) {
-          limbMap.set(event.limb, [...limbMap.get(event.limb)!, event.hold]);
+          if(!limbMap.get(event.limb)?.includes(event.hold)) {
+            limbMap.set(event.limb, [...limbMap.get(event.limb)!, event.hold]);
+          }
         }
         else {
-          limbMap.set(event.limb, [event.hold]);
+          if(event.limb) {
+            limbMap.set(event.limb, [event.hold]);
+          }
         }
+        console.log("limbMap after:", limbMap)
       })
     })
     const availableLimbs = Array.from(limbMap.keys());
@@ -38,7 +48,7 @@ export default function AnalyzeScreen() {
   useEffect(() => {
     // Navigate to selected hold and limb in each video
     videosRef.current.forEach((video, index) => {
-      if (!videoStates[index].isLoaded) return;
+      if (videoStates && videoStates[index] && !videoStates[index].isLoaded) return;
       const timestamp = findTimestamp(index, activeLimb!, activeHold!);
       if (timestamp) {
         video?.setPositionAsync((timestamp * 1000));

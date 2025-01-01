@@ -7,10 +7,9 @@ import {
   StyleSheet,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { io } from "socket.io-client"; // <-- import socket.io-client
 import configData from "../config.json";
 import { useRouter } from "expo-router";
-import { useVideo } from "../store/VideoDataProvider"; // Adjust path if needed
+import { useVideo, VideoItem } from "../store/VideoDataProvider"; // Adjust path if needed
 
 export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
@@ -21,45 +20,33 @@ export default function UploadScreen() {
   const router = useRouter();
   const { dispatch } = useVideo();
 
-  const socketRef = useRef<any>(null);
-  const connectSocket = async () => {
-    return new Promise((resolve, reject) => {
-      socketRef.current = io(configData.apiRootUrl, {
-        path: configData.serverCustomPath
-      });
+  const startPolling = async (jobId: string) => {
+    return new Promise<VideoItem[]>((resolve, reject) => {
+      let interval: NodeJS.Timeout;
 
-      socketRef.current.on("connect", () => {
-        console.log("Socket connected. ID:", socketRef.current.id);
-        resolve(socketRef.current.id);
-      });
+      const pollJobStatus = async () => {
+        try {
+          const response = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-job/${jobId}`);
+          const data = await response.json();
 
-      socketRef.current.on("disconnect", () => {
-        console.log("Socket disconnected. ID:", socketRef.current.id);
-      });
+          setProgress(data["processing_progress"]);
 
-      socketRef.current.on("connect_error", (error: any) => {
-        console.error("Socket connection error:", error);
-        reject(error); // Reject the promise with the error
-      });
-
-      socketRef.current.on("processing progress", (percent: number) => {
-        let progress = Math.round(percent * 100);
-        setProgress(progress);
-        if (progress === 100) {
-          console.log("disconnecting socket");
-          socketRef.current.disconnect();
+          if (data.status === 'completed') {
+            const videosResponse = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${data.owner}`);
+            const videosList = await videosResponse.json();
+            clearInterval(interval);
+            resolve(videosList);
+          }
+        } catch (error) {
+          console.error('Error polling job status:', error);
+          clearInterval(interval);
+          reject(error);
         }
-      });
+      };
+
+      interval = setInterval(pollJobStatus, 5000);
     });
   };
-
-  useEffect(() => {
-    return () => {
-      if (socketRef.current && socketRef.current.connected) {
-        socketRef.current.disconnect();
-      }
-    };
-  }, []);
 
   const pickVideo = async () => {
     try {
@@ -69,17 +56,30 @@ export default function UploadScreen() {
       });
 
       if (result.canceled) {
-        // User canceled the picker
         return;
       }
 
-      // Expo’s DocumentPicker in some versions can return 
-      // result.output or result.uri. Adjust logic as needed.
       setVideoFile(result.output?.[0] ?? null);
     } catch (error: any) {
       setError(`Error selecting video: ${error.message}`);
     }
   };
+
+  const checkServerCache = async (videoName: string) => {
+    const videosResponse = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${videoName}`);
+    try {
+      const data = await videosResponse.json();
+      dispatch({
+        type: "SET_VIDEOS",
+        payload: data,
+      });
+      setUploading(false);
+      router.push("/analyze");
+    }
+    catch (error: any) {
+      console.log("Failed to access server filesystem cache.", error)
+    }
+  }
 
   const uploadVideo = async () => {
     if (!videoFile) {
@@ -94,9 +94,11 @@ export default function UploadScreen() {
       dispatch({
         type: "RESET_VIDEOS",
       });
-      const socketId = await connectSocket();
+
+      await checkServerCache(videoFile.name);
+
       const uploadUrl =
-        configData.apiRootUrl + configData.serverCustomPath + "video-upload/" + socketId;
+        configData.apiRootUrl + configData.serverCustomPath + "video-upload";
 
       const formData = new FormData();
       formData.append("video", videoFile);
@@ -112,14 +114,23 @@ export default function UploadScreen() {
       }
 
       const responseData = await response.json();
-      if (responseData) {
+      if (responseData['already_processed']) {
         dispatch({
           type: "SET_VIDEOS",
-          payload: responseData.result,
+          payload: responseData['data'],
         });
+        setUploading(false);
         router.push("/analyze");
       } else {
-        console.log("Error! Response data is in wrong format.", responseData);
+        const pollingResult = await startPolling(responseData['job_id']);
+        if(pollingResult) {
+          dispatch({
+            type: "SET_VIDEOS",
+            payload: pollingResult,
+          });
+          setUploading(false);
+          router.push("/analyze");
+        }
       }
     } catch (error: any) {
       setError(`Upload Error: ${error.message}`);

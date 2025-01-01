@@ -20,7 +20,7 @@ export type VideoEvent = {
 /**
  * Each video object has a URL and an array of events.
  */
-type VideoItem = {
+export type VideoItem = {
   videoUrl: string;
   events: VideoEvent[];
 };
@@ -28,7 +28,7 @@ type VideoItem = {
 /**
  * The global state keeps an array of these video objects.
  */
-type VideoState = {
+export type VideoState = {
   videos: VideoItem[];
 };
 
