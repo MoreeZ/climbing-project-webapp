@@ -1,18 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  View,
-  Text,
-  Button,
-  ActivityIndicator,
-  StyleSheet,
-} from "react-native";
+import { View, Text, Button, StyleSheet } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import configData from "../config.json";
 import { useRouter } from "expo-router";
 import { useVideo, VideoItem } from "../store/VideoDataProvider"; // Adjust path if needed
 
 export default function UploadScreen() {
-  const [uploading, setUploading] = useState(false);
+  const [uploadingStage, setUploadingStage] = useState<string | null>(null);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [progress, setProgress] = useState(0); // Track the progress of "processing progress"
   const [error, setError] = useState<string | null>(null); // State to track error messages
@@ -21,24 +15,29 @@ export default function UploadScreen() {
   const { dispatch } = useVideo();
 
   const startPolling = async (jobId: string) => {
+    setProgress(0);
     return new Promise<VideoItem[]>((resolve, reject) => {
       let interval: NodeJS.Timeout;
 
       const pollJobStatus = async () => {
         try {
-          const response = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-job/${jobId}`);
+          const response = await fetch(
+            `https://services.oskarmroz.com/indoor-climbing/get-job/${jobId}`
+          );
           const data = await response.json();
 
           setProgress(data["processing_progress"]);
 
-          if (data.status === 'completed') {
-            const videosResponse = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${data.owner}`);
+          if (data.status === "completed") {
+            const videosResponse = await fetch(
+              `https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${data.owner}`
+            );
             const videosList = await videosResponse.json();
             clearInterval(interval);
             resolve(videosList);
           }
         } catch (error) {
-          console.error('Error polling job status:', error);
+          console.error("Error polling job status:", error);
           clearInterval(interval);
           reject(error);
         }
@@ -66,22 +65,23 @@ export default function UploadScreen() {
   };
 
   const checkServerCache = async (videoName: string) => {
-    const videosResponse = await fetch(`https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${videoName}`);
+    const videosResponse = await fetch(
+      `https://services.oskarmroz.com/indoor-climbing/get-videos-from-owner?owner=${videoName}`
+    );
     try {
       const data = await videosResponse.json();
-      if(data.length > 0) {
+      if (data.length > 0) {
         dispatch({
           type: "SET_VIDEOS",
           payload: data,
         });
-        setUploading(false);
+        setUploadingStage(null);
         router.push("/analyze");
       }
+    } catch (error: any) {
+      console.log("Failed to access server filesystem cache.", error);
     }
-    catch (error: any) {
-      console.log("Failed to access server filesystem cache.", error)
-    }
-  }
+  };
 
   const uploadVideo = async () => {
     if (!videoFile) {
@@ -89,8 +89,18 @@ export default function UploadScreen() {
       return;
     }
 
-    setUploading(true);
+    setUploadingStage("Uploading");
     setError(null); // Reset the error state
+
+    let fakeProgressInterval = setInterval(() => {
+      setProgress((prevProgress) => {
+        if (prevProgress >= 100) {
+          clearInterval(fakeProgressInterval);
+          return 100; // Cap the progress at 100%
+        }
+        return prevProgress + 1; // Increment progress by 1%
+      });
+    }, 300); // Update every 200ms
 
     try {
       dispatch({
@@ -110,34 +120,36 @@ export default function UploadScreen() {
         body: formData,
       });
 
+      // Once the response is received, clear the interval
+      clearInterval(fakeProgressInterval);
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Upload failed: ${errorText}`);
       }
 
       const responseData = await response.json();
-      if (responseData['already_processed']) {
+      if (responseData["already_processed"]) {
         dispatch({
           type: "SET_VIDEOS",
-          payload: responseData['data'],
+          payload: responseData["data"],
         });
-        setUploading(false);
         router.push("/analyze");
       } else {
-        const pollingResult = await startPolling(responseData['job_id']);
-        if(pollingResult) {
+        setUploadingStage("Processing");
+        const pollingResult = await startPolling(responseData["job_id"]);
+        if (pollingResult) {
           dispatch({
             type: "SET_VIDEOS",
             payload: pollingResult,
           });
-          setUploading(false);
           router.push("/analyze");
         }
       }
     } catch (error: any) {
       setError(`Upload Error: ${error.message}`);
     } finally {
-      setUploading(false);
+      setUploadingStage(null);
     }
   };
 
@@ -160,18 +172,29 @@ export default function UploadScreen() {
             <Button title="Select Video" onPress={pickVideo} color="#0066cc" />
           </View>
 
-          {uploading ? (
-            <>
-              <ActivityIndicator size="large" color="#0066cc" />
-              <Text style={{ marginTop: 10 }}>Processing: {progress}%</Text>
-            </>
+          {uploadingStage ? (
+            <View style={styles.progressContainer}>
+              <View style={styles.progressBar}>
+                <View
+                  style={{
+                    ...styles.progressIndicator,
+                    width: `${progress}%`,
+                  }}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {uploadingStage === "Uploading"
+                  ? uploadingStage
+                  : uploadingStage + `: ${progress}%`}
+              </Text>
+            </View>
           ) : (
             <View style={styles.buttonWrapper}>
               <Button
                 title="Upload Video"
                 onPress={uploadVideo}
                 color="#28a745"
-                disabled={!videoFile || uploading}
+                disabled={!videoFile || uploadingStage != null}
               />
             </View>
           )}
@@ -204,7 +227,7 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: "center",
     elevation: 2,
-    boxShadow: "0px 5px 10px rgba(0, 0, 0, 0.1)"
+    boxShadow: "0px 5px 10px rgba(0, 0, 0, 0.1)",
   },
   selectedVideoText: {
     fontSize: 16,
@@ -230,5 +253,26 @@ const styles = StyleSheet.create({
   buttonWrapper: {
     width: "100%",
     marginBottom: 20,
+  },
+  progressContainer: {
+    width: "100%",
+    alignItems: "center",
+    marginTop: 20,
+  },
+  progressBar: {
+    width: "100%",
+    height: 20,
+    backgroundColor: "#e0e0e0",
+    borderRadius: 10,
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  progressIndicator: {
+    height: "100%",
+    backgroundColor: "#00cc66",
+  },
+  progressText: {
+    fontSize: 14,
+    color: "#333",
   },
 });

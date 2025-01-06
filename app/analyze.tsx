@@ -15,16 +15,12 @@ export default function AnalyzeScreen() {
   const [activeLimb, setActiveLimb] = useState<string | null>(null);
   const [activeHold, setActiveHold] = useState<string | null>(null);
   const [sortedEventsByLimb, setSortedEventsByLimb] = useState(new Map<string, string[]>());
+  const [eventFindErrors, setEventFindErrors] = useState<boolean[]>([])
 
   useEffect(() => {
-    console.log("videos:", videos)
     const limbMap = new Map<string, string[]>();
     videos && videos.forEach((vid) => {
       vid.events.forEach(event => {
-        console.log("===============================================")
-        console.log("event:", event)
-        console.log("limbMap after:", limbMap)
-        console.log("limbMap.has(event.limb):", limbMap.has(event.limb))
         if (limbMap.has(event.limb)) {
           if(!limbMap.get(event.limb)?.includes(event.hold)) {
             limbMap.set(event.limb, [...limbMap.get(event.limb)!, event.hold]);
@@ -35,7 +31,6 @@ export default function AnalyzeScreen() {
             limbMap.set(event.limb, [event.hold]);
           }
         }
-        console.log("limbMap after:", limbMap)
       })
     })
     const availableLimbs = Array.from(limbMap.keys());
@@ -46,23 +41,27 @@ export default function AnalyzeScreen() {
   }, [videos])
 
   useEffect(() => {
+    const notFoundErrors = [...eventFindErrors];
     // Navigate to selected hold and limb in each video
     videosRef.current.forEach((video, index) => {
       if (videoStates && videoStates[index] && !videoStates[index].isLoaded) return;
       const timestamp = findTimestamp(index, activeLimb!, activeHold!);
-      if (timestamp) {
-        video?.setPositionAsync((timestamp * 1000));
+      notFoundErrors[index] = false;
+      if (typeof timestamp === 'number') {
+        video?.setPositionAsync((timestamp * 1000)+200);
       }
-      else {
-        video?.setPositionAsync(0);
+      else if (activeLimb && activeHold) {
+        notFoundErrors[index] = true;
       }
     })
+    setEventFindErrors(notFoundErrors);
   }, [activeHold, activeLimb])
 
   const findTimestamp = (videoIndex: number, limb: string, hold: string) => {
     if (!videos[videoIndex]) return null;
     if (!limb || !hold) return null;
     const timestamp = videos[videoIndex].events.find(event => event.limb === limb && event.hold === hold)?.timestamp;
+    if (timestamp === 0) return timestamp;
     return timestamp || null;
   }
 
@@ -113,22 +112,25 @@ export default function AnalyzeScreen() {
         {renderHoldButtons()}
       </View>
 
-      <ScrollView style={styles.videoContainer} horizontal showsHorizontalScrollIndicator={false}>
+      <ScrollView style={styles.videosContainer} horizontal showsHorizontalScrollIndicator={false}>
         {videos && videos.map((vid, index) =>
           <View key={index}>
             <Text style={styles.navigationText}>Video {index + 1}</Text>
-            <Video
-              key={index}
-              ref={(ref) => (videosRef.current[index] = ref)}
-              style={styles.video}
-              source={{ uri: vid.videoUrl }}
-              useNativeControls
-              resizeMode={ResizeMode.CONTAIN}
-              isMuted
-              onPlaybackStatusUpdate={(newStatus) => handleSetVideoStatus(index, newStatus)}
-              videoStyle={Platform.OS === 'web' ? { position: 'relative' } : undefined}
+            <View style={styles.videoContainer}>
+              <Video
+                key={index}
+                ref={(ref) => (videosRef.current[index] = ref)}
+                style={styles.video}
+                source={{ uri: vid.videoUrl }}
+                useNativeControls
+                resizeMode={ResizeMode.CONTAIN}
+                isMuted
+                onPlaybackStatusUpdate={(newStatus) => handleSetVideoStatus(index, newStatus)}
+                videoStyle={Platform.OS === 'web' ? { position: 'relative' } : undefined}
 
-            />
+              />
+              {eventFindErrors[index] && <Text style={styles.timestampNotFoundError}><Text style={styles.bold}>{activeLimb}</Text> never touches <Text style={styles.bold}>{activeHold}</Text>!</Text>}
+            </View>
           </View>
         )}
       </ScrollView>
@@ -157,9 +159,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
-  videoContainer: {
+  videosContainer: {
     flex: 1,
     paddingHorizontal: 10,
+    position: "relative"
+  },
+  videoContainer: {
+    position: "relative"
   },
   video: {
     marginRight: 10,
@@ -177,7 +183,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#888",
   },
-  findError: {
-
+  timestampNotFoundError: {
+    position: "absolute",
+    // width: "100%",
+    textAlign: "center",
+    padding: 10,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    color: "white",
+    flex: 1,
+    zIndex: 2,
   },
+  bold: {
+    fontWeight: "bold"
+  }
 });
