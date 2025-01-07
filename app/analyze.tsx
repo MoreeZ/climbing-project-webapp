@@ -48,7 +48,7 @@ export default function AnalyzeScreen() {
       const timestamp = findTimestamp(index, activeLimb!, activeHold!);
       notFoundErrors[index] = false;
       if (typeof timestamp === 'number') {
-        video?.setPositionAsync((timestamp * 1000)+200);
+        video?.setPositionAsync((timestamp * 1000));
       }
       else if (activeLimb && activeHold) {
         notFoundErrors[index] = true;

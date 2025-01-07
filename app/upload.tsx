@@ -100,7 +100,7 @@ export default function UploadScreen() {
         }
         return prevProgress + 1; // Increment progress by 1%
       });
-    }, 300); // Update every 200ms
+    }, 300);
 
     try {
       dispatch({
